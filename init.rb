@@ -1,5 +1,12 @@
 require 'redmine'
 
+require_dependency 'loader'
+
+ActionDispatch::Callbacks.to_prepare do
+  Mailer.__send__(:include, LoaderMailer)
+  IssueObserver.__send__(:include, LoaderIssueObserver)
+end
+
 Redmine::Plugin.register :redmine_loader do
 
   name 'Basic project file loader for Redmine'
@@ -17,8 +24,9 @@ Redmine::Plugin.register :redmine_loader do
   default_tracker_alias = 'Tracker'
 
   settings :default => {
-	:tracker => default_tracker_name, 
-	:tracker_alias => default_tracker_alias 
+	:tracker => default_tracker_name,
+	:tracker_alias => default_tracker_alias,
+	:instant_import_tasks => 10
   }, :partial => 'settings/loader_settings'
 
 
