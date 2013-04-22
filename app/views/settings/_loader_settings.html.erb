@@ -2,4 +2,6 @@
   <p><label>Tracker for project files</label><%= text_field_tag 'settings[tracker]', @settings['tracker'] %></p>
   <p><label>Alias for Tracker field</label><%= text_field_tag 'settings[tracker_alias]', @settings['tracker_alias'] %></p>
   <p><label>Max number of tasks to immediately import</label><%= number_field_tag 'settings[instant_import_tasks]', @settings['instant_import_tasks'], :in => 10..100, :step => 5 %></p>
+  <p><label>Export Versions : </label><%= check_box_tag('settings[version_export]', @settings['version_export'], @settings['version_export']) %></p>
+  <p><label>Export Sub Projects : </label><%= check_box_tag('settings[sub_project_export]', @settings['sub_project_export'], @settings['sub_project_export']) %></p>
 

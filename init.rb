@@ -26,7 +26,9 @@ Redmine::Plugin.register :redmine_loader do
   settings :default => {
 	:tracker => default_tracker_name,
 	:tracker_alias => default_tracker_alias,
-	:instant_import_tasks => 10
+	:instant_import_tasks => 10,
+	:version_export => true,
+	:sub_project_export => true
   }, :partial => 'settings/loader_settings'
 
 

@@ -207,39 +207,14 @@ class LoaderController < ApplicationController
 
     @id = 0
     request_from = Rails.application.routes.recognize_path(request.referrer)
+	@export_version = Setting.plugin_redmine_loader['version_export']
+	@export_subproject = Setting.plugin_redmine_loader['sub_project_export']
     get_sorted_query unless request_from[:controller] =~ /loader/
     xml = Builder::XmlMarkup.new(:target => out_string = "", :indent => 2)
     @used_issues = {}
     xml.Project do
       xml.Tasks do
-        xml.Task do
-          xml.UID("0")
-          xml.ID("0")
-          xml.ConstraintType("0")
-          xml.OutlineNumber("0")
-          xml.OutlineLevel("0")
-          xml.Name(@project.name)
-          xml.Type("1")
-          xml.CreateDate(@project.created_on.to_s(:ms_xml))
-        end
-
-        if @query
-          determine_nesting(@query_issues)
-          @nested_issues.each { |struct| write_task(xml, struct) }
-        else
-          # adding version sorting
-          versions = @project.versions.find(:all, :order => "effective_date ASC, id")
-          versions.each do |version|
-          # Uncomment below if you want to export all related with issues project versions
-            # write_version(xml, version)
-            issues = @project.issues.find(:all, :conditions => ["fixed_version_id = ?",version.id], :order => "parent_id, start_date, id" )
-            determine_nesting(issues)
-            @nested_issues.each { |issue| write_task(xml, issue, version.effective_date, true) }
-          end
-          issues = @project.issues.find(:all, :order => "parent_id, start_date, id", :conditions => ["fixed_version_id = ?", nil])
-          determine_nesting(issues)
-          @nested_issues.each { |issue| write_task(xml, issue) }
-        end
+        write_project(xml, 0, 0, @project)
       end
       xml.Resources do
         xml.Resource do
@@ -278,26 +253,89 @@ class LoaderController < ApplicationController
     return out_string, projectname
   end
 
-  def determine_nesting(issues)
+  def write_project(xml, index, level, project_item)
+	#Start a new index for items in this project
+	newIndex = 0
+	#Start a new sub level for items in this project
+	newLevel = level + 1
+	xml.Task do
+	  xml.UID(@id)
+	  xml.ID(@id)
+	  xml.ConstraintType("0")
+	  xml.OutlineNumber(index)
+	  xml.OutlineLevel(level)
+	  xml.Name(project_item.name)
+	  xml.Type("1")
+	  xml.CreateDate(project_item.created_on.to_s(:ms_xml))
+	end
+	@id += 1
+	if @query
+	  determine_nesting(@query_issues, level)
+	  @nested_issues.each { |struct| write_task(xml, struct) }
+	else
+	  # adding version sorting
+	  versions = project_item.shared_versions.find(:all, :order => "effective_date ASC")
+	  versions.each do |version|
+	  # Uncomment below if you want to export all related with issues project versions
+		issues = project_item.issues.find(:all, :conditions => ["fixed_version_id = ?",version.id], :order => "parent_id, start_date, id" )
+		if issues.length > 0
+			if @export_version
+				write_version(xml, version, newLevel, newIndex)
+				newIndex += 1
+				determine_nesting(issues, (newLevel+1))
+				@nested_issues.each { |issue| write_task(xml, issue, version.effective_date) }
+			else
+				determine_nesting(issues, newLevel)
+				@nested_issues.each { |issue| write_task(xml, issue, version.effective_date) }
+			end
+			
+		end
+	  end
+	  issues = project_item.issues.find(:all, :order => "parent_id, start_date, id")
+	  determine_nesting(issues, newLevel)
+	  @nested_issues.each { |issue| write_task(xml, issue) }
+	  if @export_subproject
+		  project_item.descendants.each do |subproject|
+			write_project(xml, newIndex, newLevel, subproject)
+			newIndex += 1
+		  end
+	  end
+	end
+  end
+  
+  def determine_nesting(issues, start_level=0)
     @nested_issues = []
     grouped = issues.group_by{ |issue| issue.level }.sort_by{ |key| key }
     grouped.each do |level, grouped_issues|
       internal_id = 0
       grouped_issues.each do |issue|
-        internal_id += 1
         struct = Task.new
         struct.issue = issue
-        struct.outlinelevel = issue.child? ? 2 : 1
-        struct.tid = issues.index(issue)
-        parent_outline = @nested_issues.select{ |struct| struct.issue == issue.parent }.first.try(:outlinenumber)
-        struct.outlinenumber = issue.child? ? "#{parent_outline}#{'.' + internal_id.to_s}" : issues.index(issue)
-        @nested_issues << struct
+		struct.children_index = 0
+		struct.children = []
+        struct.outlinelevel = level + start_level
+		#issue.child? ? 2 : 1
+		struct.tid = @id
+		@id += 1
+		#issues.index(issue)
+        parent_structs = @nested_issues.select{ |struct| struct.issue == issue.parent }
+		#.try(:outlinenumber)
+		if parent_structs.length > 0
+			struct.outlinenumber = parent_structs[0].children_index
+			parent_structs[0].children_index += 1
+			parent_structs[0].children << struct
+		else
+			struct.outlinenumber = internal_id
+			@nested_issues << struct
+			internal_id += 1
+		end
+		#issue.child? ? "#{parent_outline}#{'.' + internal_id.to_s}" : issues.index(issue)
       end
     end
     return @nested_issues
   end
 
-  def write_task(xml, struct, due_date=nil, under_version=false)
+  def write_task(xml, struct, due_date=nil)
     return if @used_issues.has_key?(struct.issue.id)
     xml.Task do
       @used_issues[struct.issue.id] = true
@@ -341,13 +379,18 @@ class LoaderController < ApplicationController
       xml.OutlineNumber(struct.outlinenumber)
       xml.OutlineLevel(struct.outlinelevel)
     end
+	if struct.children.length > 0
+		struct.children.each do |child_issue|
+			write_task(xml, child_issue, due_date)
+		end
+	end
 #    issues = @project.issues.find(:all, :order => "start_date, id", :conditions => ["parent_id = ?", issue.id])
 #    issues.each { |sub_issue| write_task(xml, sub_issue, due_date, under_version) }
   end
 
-  def write_version(xml, version)
+  def write_version(xml, version, level=0, index=0)
     xml.Task do
-      @id += 1
+      
       xml.UID(version.id)
       xml.ID(@id)
       xml.Name(version.name)
@@ -370,8 +413,9 @@ class LoaderController < ApplicationController
       #  xml.PredecessorLink { xml.PredecessorUID(issue.id) }
       #end
       xml.WBS(@id)
-      xml.OutlineNumber(@id)
-      xml.OutlineLevel(1)
+      xml.OutlineNumber(index)
+      xml.OutlineLevel(level)
+	  @id += 1
     end
   end
 
