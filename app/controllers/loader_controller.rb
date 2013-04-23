@@ -317,9 +317,7 @@ class LoaderController < ApplicationController
 		#issue.child? ? 2 : 1
 		struct.tid = @id
 		@id += 1
-		#issues.index(issue)
-        parent_structs = @nested_issues.select{ |struct| struct.issue == issue.parent }
-		#.try(:outlinenumber)
+        parent_structs = find_parent(@nested_issues, issue.parent)
 		if parent_structs.length > 0
 			struct.outlinenumber = parent_structs[0].children_index
 			parent_structs[0].children_index += 1
@@ -329,12 +327,27 @@ class LoaderController < ApplicationController
 			@nested_issues << struct
 			internal_id += 1
 		end
-		#issue.child? ? "#{parent_outline}#{'.' + internal_id.to_s}" : issues.index(issue)
+		
       end
     end
     return @nested_issues
   end
 
+  def find_parent(parent_issues, issue_parent)
+	parent_structs = parent_issues.select{ |struct| struct.issue == issue_parent }
+	parent_struct = nil
+	if parent_structs.length > 0
+		parent_struct = parent_structs[0]
+	else
+		parent_issues.each do |struct|
+			if struct.children.length > 0
+				parent_struct = find_parent(struct.children, issue_parrent)
+			end
+		end
+	end
+	return parent_struct;
+  end
+  
   def write_task(xml, struct, due_date=nil)
     return if @used_issues.has_key?(struct.issue.id)
     xml.Task do
