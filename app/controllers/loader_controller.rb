@@ -317,11 +317,11 @@ class LoaderController < ApplicationController
 		#issue.child? ? 2 : 1
 		struct.tid = @id
 		@id += 1
-        parent_structs = find_parent(@nested_issues, issue.parent)
-		if parent_structs.length > 0
-			struct.outlinenumber = parent_structs[0].children_index
-			parent_structs[0].children_index += 1
-			parent_structs[0].children << struct
+        parent_struct = find_parent(@nested_issues, issue.parent)
+		if parent_struct != nil
+			struct.outlinenumber = parent_struct.children_index
+			parent_struct.children_index += 1
+			parent_struct.children << struct
 		else
 			struct.outlinenumber = internal_id
 			@nested_issues << struct
